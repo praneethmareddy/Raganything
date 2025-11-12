@@ -1,0 +1,108 @@
+import os
+import asyncio
+import ollama
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from raganything import RAGAnything, RAGAnythingConfig
+
+# -------------------------------
+# 🔧 CONFIGURATION
+# -------------------------------
+DOCS_FOLDER = "./docs"          # 👈 change this to your folder path
+WORKING_DIR = "./rag_storage"
+OUTPUT_DIR = "./output"
+
+LLM_MODEL = "llama3"            # 👈 any local Ollama model (e.g. llama3, mistral, phi3)
+EMBED_MODEL = "all-MiniLM-L6-v2"
+
+# -------------------------------
+# 🧠 Embedding Function (Local)
+# -------------------------------
+print("Loading embedding model...")
+embedder = SentenceTransformer(EMBED_MODEL)
+
+def embedding_func(texts):
+    """Convert text(s) to embeddings using SentenceTransformer."""
+    if isinstance(texts, str):
+        texts = [texts]
+    return np.array(embedder.encode(texts, normalize_embeddings=True))
+
+# -------------------------------
+# 💬 LLM Function (Ollama)
+# -------------------------------
+async def llm_model_func(prompt, **kwargs):
+    """Query the local Ollama LLM."""
+    response = ollama.chat(
+        model=LLM_MODEL,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response["message"]["content"]
+
+# -------------------------------
+# ⚙️ Initialize RAG-Anything
+# -------------------------------
+config = RAGAnythingConfig(
+    working_dir=WORKING_DIR,
+    parser="mineru",          # or "docling"
+    parse_method="auto",
+    enable_image_processing=False,
+    enable_table_processing=True,
+    enable_equation_processing=False,
+)
+
+rag = RAGAnything(
+    config=config,
+    llm_model_func=llm_model_func,
+    vision_model_func=None,
+    embedding_func=embedding_func,
+)
+
+# -------------------------------
+# 🧾 Document Ingestion
+# -------------------------------
+async def prepare_docs():
+    """Process and index all documents from DOCS_FOLDER."""
+    print(f"\n📂 Processing documents from: {DOCS_FOLDER}")
+    await rag.process_folder_complete(
+        folder_path=DOCS_FOLDER,
+        output_dir=OUTPUT_DIR,
+        file_extensions=[".pdf", ".docx", ".pptx", ".txt"],
+        recursive=True,
+        max_workers=4,
+    )
+    print("✅ Document ingestion completed.\n")
+
+# -------------------------------
+# 🔍 Interactive Query Loop
+# -------------------------------
+async def chat_loop():
+    """User query loop for local RAG."""
+    print("🧠 RAG-Anything + Ollama (Local Mode)")
+    print("Type your questions about the documents below.")
+    print("Type 'exit' or 'quit' to stop.\n")
+
+    while True:
+        query = input("❓ You: ").strip()
+        if query.lower() in ["exit", "quit"]:
+            print("👋 Exiting...")
+            break
+
+        print("🤖 Thinking...")
+        try:
+            result = await rag.aquery(query, mode="hybrid")  # or "local"
+            print(f"\n📘 Answer:\n{result}\n")
+        except Exception as e:
+            print(f"⚠️ Error: {e}\n")
+
+# -------------------------------
+# 🚀 MAIN
+# -------------------------------
+async def main():
+    if not os.path.exists(WORKING_DIR):
+        os.makedirs(WORKING_DIR, exist_ok=True)
+
+    await prepare_docs()
+    await chat_loop()
+
+if __name__ == "__main__":
+    asyncio.run(main())
