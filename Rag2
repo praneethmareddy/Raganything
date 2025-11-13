@@ -1,0 +1,123 @@
+import os
+import subprocess
+import requests
+import asyncio
+from dotenv import load_dotenv
+
+# 1. Load environment
+load_dotenv()
+
+USE_LOCAL = os.getenv("USE_LOCAL", "false").lower() in ("1","true","yes")
+
+# Company LLM config
+CLIENT_KEY   = os.getenv("CLIENT_KEY")
+PASS_KEY     = os.getenv("PASS_KEY")
+EMAIL        = os.getenv("EMAIL")
+MODEL_ID     = os.getenv("MODEL_ID")
+ENDPOINT_URL = os.getenv("ENDPOINT_URL")
+
+# Local Ollama config
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+
+# Folder of documents to ingest
+DOC_FOLDER = os.getenv("DOC_FOLDER", "./docs")
+
+# Import RAG-Anything framework
+from raganything import RAGAnything, RAGAnythingConfig
+
+# Helper functions for LLMs
+def query_company_llm(prompt: str) -> str:
+    headers = {
+        "x-generative-ai-client": CLIENT_KEY,
+        "x-openapi-token":       PASS_KEY,
+        "x-generative-ai-user-email": EMAIL
+    }
+    body = {
+        "modelIds": [MODEL_ID],
+        "contents": [prompt],
+        "llmConfig": {
+            "max_new_tokens": 1024,
+            "return_full_text": False,
+            "seed": None,
+            "top_k": 14,
+            "top_p": 0.94,
+            "temperature": 0.4,
+            "repetition_penalty": 1.04
+        },
+        "isStream": False,
+        "systemPrompt": "You are an assistant."
+    }
+    url = ENDPOINT_URL.rstrip("/") + "/openapi/chat/v1/models"
+    resp = requests.get(url, headers=headers, json=body, timeout=60)
+    resp.raise_for_status()
+    data = resp.json()
+    # Adapt this extraction based on your API’s response format
+    if isinstance(data, dict) and "data" in data:
+        # try retrieve text
+        txt = data["data"].get("text") if isinstance(data["data"], dict) else None
+        if txt:
+            return txt
+    return str(data)
+
+def query_ollama(prompt: str) -> str:
+    try:
+        completed = subprocess.run(
+            ["ollama", "run", OLLAMA_MODEL],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        if completed.returncode != 0:
+            return f"[ollama-error] rc={completed.returncode} stderr={completed.stderr.strip()}"
+        return completed.stdout.strip()
+    except FileNotFoundError:
+        return "[ollama-error] 'ollama' not found"
+    except Exception as e:
+        return f"[ollama-error] {e}"
+
+# The unified LLM function used by RAG-Anything
+async def llm_model_fn(prompt: str, system_prompt: str = None, history_messages=None, **kwargs) -> str:
+    # You may incorporate system_prompt + history_messages into prompt formatting if you want
+    effective = ""
+    if system_prompt:
+        effective += f"[system]: {system_prompt}\n"
+    if history_messages:
+        for m in history_messages:
+            role = m.get("role", "")
+            content = m.get("content", "")
+            effective += f"[{role}]: {content}\n"
+    effective += f"[user]: {prompt}\n"
+    # Choose backend
+    if USE_LOCAL:
+        return query_ollama(effective)
+    else:
+        return query_company_llm(effective)
+
+# Main function
+async def main():
+    # Setup config for RAG-Anything
+    config = RAGAnythingConfig(
+        working_dir = "./rag_storage",
+        llm_model_func = llm_model_fn
+    )
+
+    rag = RAGAnything(config=config)
+
+    # Ingest folder
+    print(f"Ingesting files from folder: {DOC_FOLDER}")
+    rag.ingest_folder(DOC_FOLDER)
+
+    print("✔️ Ingestion complete — now you can query!")
+
+    # Query loop
+    while True:
+        q = input("\nYou: ")
+        if q.lower() in ("exit","quit"):
+            print("👋 Goodbye")
+            break
+        ans = await rag.query(q)
+        print(f"Assistant: {ans}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
