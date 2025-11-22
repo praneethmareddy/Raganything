@@ -1,0 +1,47 @@
+@debug_node_execution("ciq_validation_node")
+async def ciq_validation_node(state: AgentState):
+
+    msgs = state["messages"]
+
+    # Add system prompt if not present
+    if not any(isinstance(m, SystemMessage) for m in msgs):
+        msgs.insert(0, SystemMessage(content=ciq_validation_prompt))
+
+    # Add file context
+    if state.get("uploaded_files"):
+        files = state["uploaded_files"]
+        file_text = "\n".join([ f"{f['filename']} ({f['type']})" for f in files ])
+        msgs.append(HumanMessage(content="Uploaded files:\n" + file_text))
+
+    # 🟢 Step 1: Call LLM with tools enabled
+    first_resp = await llm_with_tools.ainvoke(msgs)
+
+    # Save tool call response
+    msgs.append(first_resp)
+
+    # 🟢 Step 2: Check if LLM asked for a tool
+    if hasattr(first_resp, "tool_calls") and first_resp.tool_calls:
+        # Run the tool
+        tool_call = first_resp.tool_calls[0]
+        tool_name = tool_call["name"]
+        tool_args = tool_call["args"]
+
+        tool_func = tools_dict[tool_name]      # you must define tools_dict
+        tool_output = tool_func(**tool_args)
+
+        # Add tool output message
+        msgs.append(AIMessage(content=str(tool_output)))
+
+        # 🟢 Step 3: Ask LLM AGAIN to summarize tool output → final answer
+        final_resp = await llm.ainvoke(msgs)
+
+        msgs.append(final_resp)
+
+        state["messages"] = msgs
+        return state
+
+    else:
+        # No tool selected → normal LLM response
+        msgs.append(first_resp)
+        state["messages"] = msgs
+        return state
