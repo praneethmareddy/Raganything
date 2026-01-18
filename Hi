@@ -1,0 +1,23 @@
+import os
+from pathlib import Path
+
+# Force CPU only
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
+from docling.document_converter import DocumentConverter
+
+def pdf_to_markdown(pdf_path: str, out_dir: str = "outputs"):
+    pdf_path = Path(pdf_path)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    converter = DocumentConverter()
+    result = converter.convert(str(pdf_path))
+
+    md_path = out_dir / f"{pdf_path.stem}.md"
+    result.document.export_to_markdown(str(md_path))
+
+    print(f"✅ Done! Markdown saved at: {md_path}")
+
+if __name__ == "__main__":
+    pdf_to_markdown("Food Nutrition Database.pdf")
