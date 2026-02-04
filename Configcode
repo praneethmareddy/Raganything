@@ -1,0 +1,26 @@
+package com.ciq.rules
+
+import com.ciq.model.CIQRow
+import com.ciq.output.ACPFConfig
+import com.ciq.output.ServerInfoConfig
+
+rule "CIQ Row to ACPF and ServerInfo"
+when
+    $ciq : CIQRow()
+then
+    // Create ACPF config (@ACPF section)
+    ACPFConfig acpf = new ACPFConfig();
+    acpf.setNeId($ciq.getNeId());
+    acpf.setNeName($ciq.getNeName());
+    acpf.setNeType($ciq.getNeType());
+
+    // Create ServerInfo config (@serverinfo section)
+    ServerInfoConfig srv = new ServerInfoConfig();
+    srv.setNeId($ciq.getNeId());
+    srv.setNeName($ciq.getNeName());
+    srv.setIp($ciq.getIp());
+
+    // Insert outputs
+    insert(acpf);
+    insert(srv);
+end
