@@ -1,3 +1,165 @@
+Perfect 👍 — final simplification confirmed.
+We will now lock ONE SIMPLE, CLEAN VERSION and nothing more.
+
+
+---
+
+✅ FINAL CONFIRMED REQUIREMENT (NO CONFUSION)
+
+Input (CIQ – XLSX)
+
+Excel may have many columns, but we ONLY care about these 3:
+
+NE ID	NE Name	NE Type
+
+1	ACPF	ACPF
+2	ACPF	ACPF
+
+
+🚫 IP is NOT used anywhere
+🚫 IP is NOT in input model
+🚫 IP is NOT in rules
+🚫 IP is NOT in output
+
+
+---
+
+Output (Config – logical)
+
+For each CIQ row, generate two sections:
+
+@acpf
+NE ID  Ne Name  Ne Type
+1      ACPF     ACPF
+
+@serverinfo
+NE ID  Ne Name  Ne Type
+1      ACPF     ACPF
+
+and again for row 2:
+
+@acpf
+NE ID  Ne Name  Ne Type
+2      ACPF     ACPF
+
+@serverinfo
+NE ID  Ne Name  Ne Type
+2      ACPF     ACPF
+
+➡️ Number of rows = number of repeated template blocks
+
+
+---
+
+🧹 STEP 0 — CLEAN PROJECT (MANDATORY)
+
+Inside Business Central → your project:
+
+Delete ALL assets:
+
+Data Objects
+
+Rules
+
+
+You should see ZERO assets before continuing.
+
+
+---
+
+STEP 1 — Create CIQ Input Object (NO IP)
+
+Step name: Create CIQRow
+
+Add Asset → Data Object
+
+Name: CIQRow
+
+Package: com.demo.simple_demo
+
+
+Fields (ONLY THESE 3)
+
+Field	Type
+
+neId	Integer
+neName	String
+neType	String
+
+
+Click Save
+
+✅ Represents one Excel row
+
+
+---
+
+STEP 2 — Create ACPF Output Object
+
+Step name: Create ACPFConfig
+
+Add Asset → Data Object
+
+Name: ACPFConfig
+
+Package: com.demo.simple_demo
+
+
+Fields
+
+Field	Type
+
+neId	Integer
+neName	String
+neType	String
+
+
+Click Save
+
+
+---
+
+STEP 3 — Create Serverinfo Output Object
+
+Step name: Create ServerInfoConfig
+
+Add Asset → Data Object
+
+Name: ServerInfoConfig
+
+Package: com.demo.simple_demo
+
+
+Fields (SAME AS ACPF)
+
+Field	Type
+
+neId	Integer
+neName	String
+neType	String
+
+
+Click Save
+
+
+---
+
+STEP 4 — Create DRL Rule (MINIMAL & SAFE)
+
+Step name: Create Transformation Rule
+
+Add Asset → Rule (DRL Rule)
+
+Name: ciq-simple-transform
+
+Package: com.demo.simple_demo
+
+
+
+---
+
+✅ PASTE THIS EXACT DRL (FINAL VERSION)
+
 package com.demo.simple_demo
 
 rule "CIQ to ACPF and Serverinfo"
@@ -17,3 +179,122 @@ then
     insert(acpf);
     insert(srv);
 end
+
+Click Save
+
+✅ No imports
+✅ No IP
+✅ Same package everywhere
+✅ No “unable to expand” issues
+
+
+---
+
+STEP 5 — Build & Deploy
+
+1. Click Build
+
+Must show: Build successful
+
+
+
+2. Click Deploy
+
+
+
+
+---
+
+STEP 6 — Deploy to KIE Server
+
+Menu ☰ → Deploy → Execution Servers
+
+Add container:
+
+Field	Value
+
+Container ID	simple-demo
+Alias	simple-demo
+KIE Base	default
+KIE Session	default
+
+
+Status must be STARTED
+
+
+---
+
+STEP 7 — Test with ONE CIQ ROW (Simulating XLSX)
+
+Run from terminal:
+
+curl -u admin:admin \
+  -H "Content-Type: application/json" \
+  -X POST \
+  http://<SERVER_IP>:8180/kie-server/services/rest/server/containers/simple-demo \
+  -d '{
+    "commands": [
+      {
+        "insert": {
+          "object": {
+            "com.demo.simple_demo.CIQRow": {
+              "neId": 1,
+              "neName": "ACPF",
+              "neType": "ACPF"
+            }
+          }
+        }
+      },
+      {
+        "fire-all-rules": {}
+      }
+    ]
+  }'
+
+
+---
+
+STEP 8 — SUCCESS CHECK ✅
+
+Response contains:
+
+ACPFConfig
+
+ServerInfoConfig
+
+
+Which maps to:
+
+@acpf
+1 ACPF ACPF
+
+@serverinfo
+1 ACPF ACPF
+
+🎉 DONE — THIS IS YOUR BASELINE
+
+
+---
+
+🧠 IMPORTANT (remember this forever)
+
+Drools does NOT read Excel
+
+Drools does NOT print config
+
+Drools only decides what sections & values exist
+
+Excel parsing + text generation happen outside
+
+
+
+---
+
+🔜 NEXT (pick ONE)
+
+1️⃣ Convert this output → exact text config
+2️⃣ Handle multiple XLSX rows (looping)
+3️⃣ Add conditions later (example: only ACPF NEs)
+4️⃣ Full Excel → Drools → Config architecture
+
+Reply with 1 / 2 / 3 / 4 and we continue cleanly 👍
