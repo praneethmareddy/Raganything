@@ -1,6 +1,6 @@
 package com.demo.simple_demo
 
-rule "CIQ Row to ACPF and ServerInfo"
+rule "CIQ to ACPF and Serverinfo"
 when
     $ciq : CIQRow()
 then
@@ -12,7 +12,7 @@ then
     ServerInfoConfig srv = new ServerInfoConfig();
     srv.setNeId($ciq.getNeId());
     srv.setNeName($ciq.getNeName());
-    srv.setIp($ciq.getIp());
+    srv.setNeType($ciq.getNeType());
 
     insert(acpf);
     insert(srv);
