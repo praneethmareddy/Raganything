@@ -1,401 +1,371 @@
-Perfect 👍
-We’ll do this exactly in the right order:
+Perfect. I’ll now explain exactly what you do inside Drools Workbench, screen by screen, and why each thing exists.
+I’ll also clearly separate INPUT → RULE → OUTPUT, so you understand the mental model, not just syntax.
 
-1️⃣ Docker first (mandatory baseline)
-2️⃣ Then Kubernetes (same setup, production-style)
+I’ll assume:
 
-I will assume your server is EMPTY and explain what to do, why you do it, and what “success” looks like at each step.
+You already have Drools Workbench + KIE Server running in Docker
 
-
----
-
-PHASE 1 — DOCKER (START FROM ZERO)
-
-Goal of this phase
-
-Get Drools Workbench and KIE Server running
-
-Validate URLs
-
-Understand how the two components exist as containers
-
-No Kubernetes yet
+You want CIQ (XLSX rows) → 2 sections (@acpf, @serverinfo)
 
 
 
 ---
 
-1️⃣ Understand what you are deploying (once)
+0️⃣ First fix one thing (important)
 
-You will run two Docker containers from Drools:
-
-Container	Purpose	Port
-
-Drools Workbench (Business Central)	Rule authoring UI	8080
-KIE Server	Rule execution (REST API)	8180
-
-
-Flow (important):
-
-Rule Author → Workbench
-CIQ App     → KIE Server
+You wrote “dslr” — the correct file is DRL
+👉 Drools Rule Language (.drl)
 
 
 ---
 
-2️⃣ Install Docker on empty server
+1️⃣ What Drools Workbench is doing (big picture)
 
-2.1 Login to server
+Workbench responsibility
 
-ssh user@server_ip
+Define input model
 
-2.2 Install Docker
+Define output model
 
-RHEL / CentOS / Rocky
+Define rules (mapping logic)
 
-sudo yum install -y docker
+Package everything as a KJAR
 
-Ubuntu
 
-sudo apt update
-sudo apt install -y docker.io
+NOT Workbench’s job
 
-2.3 Start Docker
+Reading Excel
 
-sudo systemctl start docker
-sudo systemctl enable docker
+Looping rows
 
-2.4 Verify
+Writing files
 
-docker --version
-docker ps
 
-✅ If no error → Docker is ready
+Those happen outside.
 
 
 ---
 
-3️⃣ Run Drools Workbench (Docker)
-
-This is the UI.
-
-3.1 Start container
-
-docker run -d \
-  --name drools-workbench \
-  -p 8080:8080 \
-  jboss/drools-workbench-showcase
-
-3.2 Verify container
-
-docker ps
-
-You must see:
-
-drools-workbench   Up
-
-3.3 Access UI
-
-Open browser:
-
-http://<SERVER_IP>:8080/business-central
-
-Login:
-
-username: admin
-password: admin
-
-✅ If UI opens → Workbench is OK
+2️⃣ Step-by-step in Drools Workbench (NO SKIPS)
 
 
 ---
 
-4️⃣ Run KIE Server (Docker)
+STEP 2.1 — Create a Project (KJAR)
 
-This is the rule engine.
+1. Login to Workbench
 
-4.1 Start container
-
-docker run -d \
-  --name kie-server \
-  -p 8180:8080 \
-  jboss/kie-server-showcase
-
-4.2 Verify
-
-docker ps
-
-4.3 Test endpoint
-
-Open:
-
-http://<SERVER_IP>:8180/kie-server/services/rest/server
-
-Expected:
-
-JSON / auth prompt / HTTP response
+http://<ip>:8080/business-central
 
 
-✅ If it responds → KIE Server is running
+2. Go to
+Menu → Design → Projects
+
+
+3. Click Add Project
+
+
+
+Fill like this:
+
+Name        : ciq-to-ne
+Group ID    : com.telco.rules
+Artifact ID : ciq-ne-mapping
+Version     : 1.0.0
+
+👉 This project is your rule container
 
 
 ---
 
-5️⃣ Link Workbench ↔ KIE Server (Docker only)
+3️⃣ Define INPUT (this represents ONE Excel row)
 
-This allows:
+STEP 3.1 — Create CIQRow (Input Fact)
 
-Workbench to deploy rules
+Path:
 
-KIE Server to execute rules
+Project → Assets → Data Objects → Add Data Object
 
+Fill:
 
-docker stop kie-server
-docker rm kie-server
+Name    : CIQRow
+Package : com.telco.ciq
 
-docker run -d \
-  --name kie-server \
-  --link drools-workbench:kie_wb \
-  -p 8180:8080 \
-  jboss/kie-server-showcase
+Add fields (VERY IMPORTANT)
 
+Field Name	Type	Why
 
----
-
-6️⃣ Docker success checklist (VERY IMPORTANT)
-
-Run:
-
-docker ps
-docker logs drools-workbench
-docker logs kie-server
-
-You must confirm:
-
-Both containers are Up
-
-UI reachable on 8080
-
-KIE Server reachable on 8180
+neId	Integer	From Excel
+neName	String	From Excel
+neType	String	From Excel
 
 
-👉 STOP HERE if this doesn’t work
-👉 Kubernetes comes ONLY after this is stable
+✔ This object = one row of XLSX
+✔ Workbench auto-generates getters/setters
 
 
 ---
 
-PHASE 2 — KUBERNETES (AFTER DOCKER WORKS)
+Mental model (remember this)
 
-Now we move the same containers into Kubernetes.
+> Every Excel row = one CIQRow fact
 
-
----
-
-7️⃣ Install Kubernetes (single-node, easiest)
-
-Since this is one server, use Minikube.
-
-7.1 Install kubectl
-
-curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl
-chmod +x kubectl
-sudo mv kubectl /usr/local/bin/
-
-Verify:
-
-kubectl version --client
-
-
----
-
-7.2 Install Minikube
-
-curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-chmod +x minikube-linux-amd64
-sudo mv minikube-linux-amd64 /usr/local/bin/minikube
-
-
----
-
-7.3 Start Kubernetes
-
-minikube start --driver=docker
-
-Verify:
-
-kubectl get nodes
-
-You must see:
-
-Ready
-
-
----
-
-8️⃣ Create namespace
-
-kubectl create namespace drools
-
-
----
-
-9️⃣ Deploy Drools Workbench (K8s)
-
-9.1 Deployment
-
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: drools-workbench
-  namespace: drools
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: drools-workbench
-  template:
-    metadata:
-      labels:
-        app: drools-workbench
-    spec:
-      containers:
-      - name: drools-workbench
-        image: jboss/drools-workbench-showcase
-        ports:
-        - containerPort: 8080
-
-Apply:
-
-kubectl apply -f drools-workbench-deployment.yaml
-
-
----
-
-9.2 Service
-
-apiVersion: v1
-kind: Service
-metadata:
-  name: drools-workbench
-  namespace: drools
-spec:
-  type: NodePort
-  selector:
-    app: drools-workbench
-  ports:
-  - port: 8080
-    targetPort: 8080
-    nodePort: 30080
-
-Apply:
-
-kubectl apply -f drools-workbench-service.yaml
-
-Access:
-
-http://<MINIKUBE_IP>:30080/business-central
-
-
----
-
-🔟 Deploy KIE Server (K8s)
-
-10.1 Deployment
-
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: kie-server
-  namespace: drools
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: kie-server
-  template:
-    metadata:
-      labels:
-        app: kie-server
-    spec:
-      containers:
-      - name: kie-server
-        image: jboss/kie-server-showcase
-        ports:
-        - containerPort: 8080
-
-Apply:
-
-kubectl apply -f kie-server-deployment.yaml
-
-
----
-
-10.2 Service
-
-apiVersion: v1
-kind: Service
-metadata:
-  name: kie-server
-  namespace: drools
-spec:
-  type: NodePort
-  selector:
-    app: kie-server
-  ports:
-  - port: 8080
-    targetPort: 8080
-    nodePort: 30180
-
-Apply:
-
-kubectl apply -f kie-server-service.yaml
-
-Access:
-
-http://<MINIKUBE_IP>:30180/kie-server/services/rest/server
-
-
----
-
-11️⃣ Final verification
-
-kubectl get pods -n drools
-kubectl get svc -n drools
-
-You should see:
-
-1 workbench pod
-
-Multiple kie-server pods
-
-Services exposed
 
 
 
 ---
 
-12️⃣ What you should clearly understand now
+4️⃣ Define OUTPUT (what rules will generate)
 
-Docker = baseline validation
+STEP 4.1 — Create OutputBlock
 
-Kubernetes = scaling + production
+Path:
 
-Workbench = rule authoring
+Assets → Data Objects → Add Data Object
 
-KIE Server = rule execution
+Fill:
 
-CIQ parsing & config generation are outside Drools
+Name    : OutputBlock
+Package : com.telco.output
+
+Fields
+
+Field	Type	Why
+
+section	String	acpf / serverinfo
+text	String	actual config text
+
+
+✔ One OutputBlock = one section of output
+
+
+---
+
+Mental model
+
+> 1 CIQRow → multiple OutputBlock objects
+
 
 
 
 ---
 
-Next step (tell me)
+5️⃣ Write RULES (this is the mapping logic)
 
-I can now: 1️⃣ Show exact CIQ row → REST call → rule output
-2️⃣ Explain how rules created in Workbench reach KIE Server
-3️⃣ Show end-to-end CIQ → config lifecycle diagram
-4️⃣ Help you prepare architecture/design explanation for interview/review
+Path:
 
-Just tell me what you want next.
+Assets → Add Asset → DRL File
+
+Name:
+
+ciq-to-template
+
+
+---
+
+STEP 5.1 — DRL header (MANDATORY)
+
+package com.telco.rules
+
+import com.telco.ciq.CIQRow
+import com.telco.output.OutputBlock
+
+Why
+
+CIQRow → input
+
+OutputBlock → output
+
+
+
+---
+
+STEP 5.2 — Rule for @acpf section
+
+rule "CIQ row to ACPF section"
+when
+    $row : CIQRow()
+then
+    String cfg =
+        "@acpf\n" +
+        "NE ID  NE Name  NE Type\n" +
+        $row.getNeId() + "  " +
+        $row.getNeName() + "  " +
+        $row.getNeType() + "\n";
+
+    OutputBlock out = new OutputBlock();
+    out.setSection("acpf");
+    out.setText(cfg);
+
+    insert(out);
+end
+
+What this rule is doing (line by line)
+
+Line	Meaning
+
+CIQRow()	Match ONE Excel row
+@acpf	Section header
+Uses 3 fields	Mapping logic
+insert(out)	Send output back
+
+
+✔ Fires once per CIQ row
+
+
+---
+
+STEP 5.3 — Rule for @serverinfo section
+
+rule "CIQ row to ServerInfo section"
+when
+    $row : CIQRow()
+then
+    String cfg =
+        "@serverinfo\n" +
+        "NE ID  NE Name\n" +
+        $row.getNeId() + "  " +
+        $row.getNeName() + "\n";
+
+    OutputBlock out = new OutputBlock();
+    out.setSection("serverinfo");
+    out.setText(cfg);
+
+    insert(out);
+end
+
+Key point
+
+Same input (CIQRow)
+Different output mapping
+Different section
+
+✔ That’s how 2 sections are generated
+
+
+---
+
+6️⃣ What happens internally (CRITICAL UNDERSTANDING)
+
+For each CIQRow inserted:
+
+Rule 1 fires → OutputBlock(acpf)
+Rule 2 fires → OutputBlock(serverinfo)
+
+So:
+
+1 row → 2 output blocks
+N rows → 2 × N output blocks
+
+Exactly your requirement.
+
+
+---
+
+7️⃣ Deploy (make rules active)
+
+Click Deploy (top-right)
+
+What happens:
+
+Rules compiled
+
+KJAR created
+
+Automatically deployed to KIE Server
+
+
+
+---
+
+8️⃣ How INPUT reaches Drools (Excel part)
+
+Drools never sees XLSX directly.
+
+Your application does:
+
+Excel
+ ↓
+Read rows
+ ↓
+Convert each row → CIQRow JSON
+ ↓
+Send to KIE Server
+
+Example input JSON (row 1):
+
+{
+  "commands": [
+    {
+      "insert": {
+        "object": {
+          "com.telco.ciq.CIQRow": {
+            "neId": 1,
+            "neName": "Acpf",
+            "neType": "Acpf"
+          }
+        }
+      }
+    },
+    { "fire-all-rules": {} }
+  ]
+}
+
+
+---
+
+9️⃣ What OUTPUT you collect
+
+Drools returns OutputBlock objects:
+
+@acpf
+NE ID  NE Name  NE Type
+1      Acpf     Acpf
+
+@serverinfo
+NE ID  NE Name
+1      Acpf
+
+Your app:
+
+Appends them
+
+Writes to .cfg file
+
+
+
+---
+
+🔟 Why this is the CORRECT design
+
+Reason	Why
+
+One row = one fact	Clean logic
+One section = one rule	Easy mapping
+No loops in DRL	Drools best practice
+XLSX handled outside	Stable
+Rules fully dynamic	Business-friendly
+
+
+
+---
+
+11️⃣ Common mistakes (avoid these)
+
+❌ Trying to read Excel inside Drools
+❌ Writing one giant rule for whole file
+❌ Concatenating full file inside DRL
+❌ Using globals for everything
+
+
+---
+
+12️⃣ If you want next (pick one)
+
+1️⃣ Same logic using Excel Decision Table (no DRL coding)
+2️⃣ Full Python script + Drools REST integration
+3️⃣ Add conditional sections
+4️⃣ Multi-NE-type templates
+5️⃣ Validation + transformation together
+
+Say the number — I’ll go equally deep.
