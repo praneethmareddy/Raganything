@@ -3,194 +3,116 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 np.random.seed(42)
 
-# =====================================
-# 1. Simulate realistic Prometheus data
-# =====================================
+# ===============================
+# STEP 1 — Simulate Pod Events
+# ===============================
 
-time_steps = 3000
-t = np.arange(time_steps)
+pods = ["pod1","pod2","pod3"]
 
-# periodic workload patterns
-cpu = 40 + 10*np.sin(t/50) + np.random.normal(0,2,time_steps)
-memory = 60 + 5*np.sin(t/120) + np.random.normal(0,1.5,time_steps)
-network = 100 + 20*np.sin(t/30) + np.random.normal(0,5,time_steps)
-disk = 50 + 8*np.sin(t/70) + np.random.normal(0,2,time_steps)
+events = [
+    "app_install",
+    "app_monitoring",
+    "app_uninstall",
+    "log_retrieval",
+    "log_update",
+    "push_image",
+    "pull_image"
+]
 
-# inject anomalies
-cpu[800:820] += 40
-memory[1500:1550] += np.linspace(0,30,50)   # memory leak
-network[2200:2220] += 80
-disk[2600:2610] += 50
+eventType_map = {
+    "app_install":"peak",
+    "push_image":"peak",
+    "pull_image":"peak",
+    "log_retrieval":"peak",
+    "app_monitoring":"steady",
+    "app_uninstall":"steady",
+    "log_update":"steady"
+}
 
-df = pd.DataFrame({
-    "cpu": cpu,
-    "memory": memory,
-    "network": network,
-    "disk": disk
-})
+rows = []
+time_steps = 2000
 
-data = df.values
+for t in range(time_steps):
+
+    pod = np.random.choice(pods)
+    event = np.random.choice(events)
+
+    eventType = eventType_map[event]
+
+    if eventType == "steady":
+        cpu = np.random.normal(40,4)
+        mem = np.random.normal(500,40)
+    else:
+        cpu = np.random.normal(70,6)
+        mem = np.random.normal(900,80)
+
+    rows.append([t,pod,event,eventType,cpu,mem])
+
+df = pd.DataFrame(rows,columns=[
+    "time","pod","event","eventType","cpuUsage","memoryUsage"
+])
+
+# Inject anomalies
+df.loc[800:820,"cpuUsage"] += 50
+df.loc[1500:1510,"memoryUsage"] += 400
 
 
-# =====================================
-# 2. Create sliding windows
-# =====================================
+# ===============================
+# STEP 2 — Encode categorical features
+# ===============================
 
-window_size = 30
+enc_pod = LabelEncoder()
+enc_event = LabelEncoder()
+enc_eventType = LabelEncoder()
 
+df["pod"] = enc_pod.fit_transform(df["pod"])
+df["event"] = enc_event.fit_transform(df["event"])
+df["eventType"] = enc_eventType.fit_transform(df["eventType"])
+
+
+# ===============================
+# STEP 3 — Feature Scaling
+# ===============================
+
+features = ["pod","event","eventType","cpuUsage","memoryUsage"]
+
+scaler = StandardScaler()
+data = scaler.fit_transform(df[features])
+
+
+# ===============================
+# STEP 4 — Create Sliding Windows
+# ===============================
+
+window = 20
 X = []
-for i in range(len(data)-window_size):
-    X.append(data[i:i+window_size])
 
-X = np.array(X)
-X_tensor = torch.tensor(X,dtype=torch.float32)
-
-dataset = torch.utils.data.TensorDataset(X_tensor)
-loader = torch.utils.data.DataLoader(dataset,batch_size=64,shuffle=True)
-
-
-# =====================================
-# 3. Transformer Autoencoder
-# =====================================
-
-class TransformerAutoencoder(nn.Module):
-
-    def __init__(self,input_dim=4,hidden_dim=128):
-
-        super().__init__()
-
-        self.encoder_layer = nn.TransformerEncoderLayer(
-            d_model=input_dim,
-            nhead=2,
-            dim_feedforward=hidden_dim,
-            batch_first=True
-        )
-
-        self.encoder = nn.TransformerEncoder(self.encoder_layer,num_layers=3)
-
-        self.decoder = nn.Linear(input_dim,input_dim)
-
-    def forward(self,x):
-
-        x = self.encoder(x)
-        x = self.decoder(x)
-
-        return x
-
-
-model = TransformerAutoencoder()
-
-criterion = nn.MSELoss()
-optimizer = torch.optim.Adam(model.parameters(),lr=0.001)
-
-
-# =====================================
-# 4. Train model
-# =====================================
-
-epochs = 12
-
-for epoch in range(epochs):
-
-    total_loss = 0
-
-    for batch in loader:
-
-        x = batch[0]
-
-        optimizer.zero_grad()
-
-        output = model(x)
-
-        loss = criterion(output,x)
-
-        loss.backward()
-
-        optimizer.step()
-
-        total_loss += loss.item()
-
-    print("Epoch:",epoch,"Loss:",round(total_loss,4))
-
-
-# =====================================
-# 5. Compute anomaly scores
-# =====================================
-
-model.eval()
-
-with torch.no_grad():
-    reconstructed = model(X_tensor)
-
-errors = torch.mean((X_tensor - reconstructed)**2,dim=(1,2)).numpy()
-
-threshold = np.mean(errors) + 3*np.std(errors)
-
-anomalies = errors > threshold
-
-print("Detected anomalies:",np.sum(anomalies))
-
-
-# =====================================
-# 6. Visualization
-# =====================================
-
-fig,axs = plt.subplots(5,1,figsize=(12,14))
-
-# CPU
-axs[0].plot(df["cpu"])
-axs[0].set_title("CPU Usage")
-
-# Memory
-axs[1].plot(df["memory"])
-axs[1].set_title("Memory Usage")
-
-# Network
-axs[2].plot(df["network"])
-axs[2].set_title("Network Traffic")
-
-# Disk
-axs[3].plot(df["disk"])
-axs[3].set_title("Disk IO")
-
-# Anomaly score
-axs[4].plot(errors,label="Anomaly Score")
-axs[4].axhline(threshold,color="red",label="Threshold")
-axs[4].scatter(np.where(anomalies)[0],errors[anomalies],color="red",s=10)
-axs[4].set_title("Anomaly Detection")
-
-axs[4].legend()
-
-plt.tight_layout()
-plt.show()for i in range(len(data)-window_size):
-    X.append(data[i:i+window_size])
+for i in range(len(data)-window):
+    X.append(data[i:i+window])
 
 X = np.array(X)
 
-# Convert to tensor
 X_tensor = torch.tensor(X,dtype=torch.float32)
 
-# DataLoader
-dataset = torch.utils.data.TensorDataset(X_tensor)
-loader = torch.utils.data.DataLoader(dataset,batch_size=64,shuffle=True)
 
+# ===============================
+# STEP 5 — Transformer Autoencoder
+# ===============================
 
-# -----------------------------
-# 3. Transformer Autoencoder
-# -----------------------------
-class TransformerAutoencoder(nn.Module):
+class TransformerAE(nn.Module):
 
-    def __init__(self,input_dim=2,hidden_dim=64):
+    def __init__(self,input_dim):
 
         super().__init__()
 
         self.encoder_layer = nn.TransformerEncoderLayer(
             d_model=input_dim,
             nhead=1,
-            dim_feedforward=hidden_dim,
+            dim_feedforward=64,
             batch_first=True
         )
 
@@ -206,69 +128,65 @@ class TransformerAutoencoder(nn.Module):
         return x
 
 
-model = TransformerAutoencoder()
+model = TransformerAE(input_dim=X.shape[2])
 
 criterion = nn.MSELoss()
 optimizer = torch.optim.Adam(model.parameters(),lr=0.001)
 
 
-# -----------------------------
-# 4. Train model
-# -----------------------------
+# ===============================
+# STEP 6 — Train Model
+# ===============================
+
 epochs = 10
 
 for epoch in range(epochs):
 
-    total_loss = 0
+    optimizer.zero_grad()
 
-    for batch in loader:
+    output = model(X_tensor)
 
-        x = batch[0]
+    loss = criterion(output,X_tensor)
 
-        optimizer.zero_grad()
+    loss.backward()
 
-        output = model(x)
+    optimizer.step()
 
-        loss = criterion(output,x)
-
-        loss.backward()
-
-        optimizer.step()
-
-        total_loss += loss.item()
-
-    print("Epoch:",epoch,"Loss:",total_loss)
+    print("Epoch",epoch,"Loss",loss.item())
 
 
-# -----------------------------
-# 5. Compute anomaly scores
-# -----------------------------
+# ===============================
+# STEP 7 — Compute Anomaly Scores
+# ===============================
+
 model.eval()
 
 with torch.no_grad():
+    recon = model(X_tensor)
 
-    reconstructed = model(X_tensor)
+errors = torch.mean((X_tensor-recon)**2,dim=(1,2)).numpy()
 
-errors = torch.mean((X_tensor - reconstructed)**2,dim=(1,2))
-errors = errors.numpy()
-
-
-# -----------------------------
-# 6. Detect anomalies
-# -----------------------------
 threshold = np.mean(errors) + 3*np.std(errors)
 
 anomalies = errors > threshold
 
-print("Detected anomalies:",np.sum(anomalies))
 
+# ===============================
+# STEP 8 — Visualization
+# ===============================
 
-# -----------------------------
-# 7. Plot anomaly scores
-# -----------------------------
-plt.figure(figsize=(10,4))
-plt.plot(errors,label="Anomaly Score")
-plt.axhline(threshold,color="red",label="Threshold")
-plt.legend()
-plt.title("Transformer-based Anomaly Detection")
+fig,axs = plt.subplots(3,1,figsize=(12,10))
+
+axs[0].plot(df["cpuUsage"],label="CPU")
+axs[0].set_title("CPU Usage")
+
+axs[1].plot(df["memoryUsage"],label="Memory")
+axs[1].set_title("Memory Usage")
+
+axs[2].plot(errors,label="Anomaly Score")
+axs[2].axhline(threshold,color="red")
+axs[2].scatter(np.where(anomalies)[0],errors[anomalies],color="red")
+axs[2].set_title("Detected Anomalies")
+
+plt.tight_layout()
 plt.show()
