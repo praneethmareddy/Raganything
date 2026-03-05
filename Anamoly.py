@@ -1,8 +1,3 @@
-# ==========================================================
-# COMPLETE PROMETHEUS-STYLE ANOMALY DETECTION PIPELINE
-# Beginner Friendly – Step-By-Step Explanations
-# ==========================================================
-
 import numpy as np
 import pandas as pd
 import torch
@@ -15,34 +10,27 @@ np.random.seed(42)
 print("\n================ STEP 0 : SYSTEM PIPELINE OVERVIEW ================\n")
 
 print("""
-Real Monitoring Pipeline (similar to Prometheus + ML):
+Real Monitoring Pipeline (similar to Prometheus + ML)
 
-        Pods / Containers
-               │
-               ▼
-        Metrics Collection
-   (CPU, Memory, Network, Events)
-               │
-               ▼
-        Data Preprocessing
-     - Encoding categorical data
-     - Normalization
-               │
-               ▼
-       Time-Series Window Creation
-               │
-               ▼
-      Transformer Anomaly Detection Model
-               │
-               ▼
-        Anomaly Score Calculation
-               │
-               ▼
-        Alert / Grafana Dashboard
+Pods / Containers
+        ↓
+Metrics Collection
+(CPU, Memory, Network, Events)
+        ↓
+Data Preprocessing
+- Encoding categorical data
+- Normalization
+        ↓
+Time-Series Window Creation
+        ↓
+Transformer Anomaly Detection Model
+        ↓
+Anomaly Score Calculation
+        ↓
+Alert / Grafana Dashboard
 """)
 
 print("\n===================================================================\n")
-
 
 # ==========================================================
 # STEP 1 : SIMULATE PROMETHEUS METRICS
@@ -92,56 +80,51 @@ for t in range(time_steps):
 
 df=pd.DataFrame(rows,columns=["time","pod","event","eventType","cpuUsage","memoryUsage"])
 
-# inject anomalies
-df.loc[500:520,"cpuUsage"]+=60
-df.loc[900:910,"memoryUsage"]+=400
+# Inject anomalies
+df.loc[500:520,"cpuUsage"] += 60
+df.loc[900:910,"memoryUsage"] += 400
 
-
-print("Sample Input Data (first 10 rows):\n")
+print("Sample Input Data\n")
 print(df.head(10))
 
-print("\nColumns meaning:")
-print("time → timestamp")
-print("pod → which container/pod generated metric")
-print("event → activity happening in pod")
-print("eventType → workload type (steady or peak)")
-print("cpuUsage → CPU utilization")
-print("memoryUsage → memory consumption\n")
+print("\nColumn Explanation")
+print("time -> timestamp")
+print("pod -> container name")
+print("event -> operation happening")
+print("eventType -> workload type")
+print("cpuUsage -> CPU utilization")
+print("memoryUsage -> memory usage")
 
 
 # ==========================================================
 # STEP 2 : VISUALIZE RAW METRICS
 # ==========================================================
 
-print("STEP 2 : Visualizing raw telemetry metrics\n")
+print("\nSTEP 2 : Visualizing raw telemetry metrics\n")
 
-plt.figure(figsize=(12,6))
+plt.figure(figsize=(12,5))
 plt.plot(df["cpuUsage"])
 plt.title("CPU Usage Over Time")
 plt.xlabel("Time")
 plt.ylabel("CPU Usage")
 plt.show()
 
-plt.figure(figsize=(12,6))
+plt.figure(figsize=(12,5))
 plt.plot(df["memoryUsage"])
 plt.title("Memory Usage Over Time")
 plt.xlabel("Time")
 plt.ylabel("Memory Usage (MB)")
 plt.show()
 
-print("""
-X-axis : Time
-Y-axis : Metric value
-
-Spikes in these graphs represent abnormal system behavior.
-""")
+print("X axis : Time")
+print("Y axis : Metric value\n")
 
 
 # ==========================================================
 # STEP 3 : ENCODE CATEGORICAL FEATURES
 # ==========================================================
 
-print("\nSTEP 3 : Encoding categorical variables\n")
+print("STEP 3 : Encoding categorical variables\n")
 
 enc_pod=LabelEncoder()
 enc_event=LabelEncoder()
@@ -151,12 +134,11 @@ df["pod"]=enc_pod.fit_transform(df["pod"])
 df["event"]=enc_event.fit_transform(df["event"])
 df["eventType"]=enc_type.fit_transform(df["eventType"])
 
-print("Encoded values example:\n")
 print(df.head())
 
 
 # ==========================================================
-# STEP 4 : NORMALIZE FEATURES
+# STEP 4 : NORMALIZATION
 # ==========================================================
 
 print("\nSTEP 4 : Normalizing data\n")
@@ -167,12 +149,12 @@ scaler=StandardScaler()
 
 data=scaler.fit_transform(df[features])
 
-print("Normalized feature sample:\n")
+print("Normalized feature sample")
 print(data[:5])
 
 
 # ==========================================================
-# STEP 5 : CREATE TIME-SERIES WINDOWS
+# STEP 5 : CREATE TIME WINDOWS
 # ==========================================================
 
 print("\nSTEP 5 : Creating sliding windows\n")
@@ -187,28 +169,19 @@ for i in range(len(data)-window):
 X=np.array(X)
 
 print("Windowed data shape:",X.shape)
-print("""
-Meaning:
-samples = number of sequences
-window size = 20 timestamps
-features = pod,event,eventType,cpu,memory
-""")
-
 
 X_tensor=torch.tensor(X,dtype=torch.float32)
 
 
 # ==========================================================
-# STEP 6 : SOTA TRANSFORMER ANOMALY MODEL
-# (Inspired by TranAD / Anomaly Transformer)
+# STEP 6 : TRANSFORMER MODEL
 # ==========================================================
 
-print("\nSTEP 6 : Building Transformer-based anomaly detection model\n")
+print("\nSTEP 6 : Building Transformer anomaly detection model\n")
 
 class TransformerAE(nn.Module):
 
     def __init__(self,input_dim):
-
         super().__init__()
 
         self.encoder_layer=nn.TransformerEncoderLayer(
@@ -229,6 +202,7 @@ class TransformerAE(nn.Module):
 
         return x
 
+
 model=TransformerAE(X.shape[2])
 
 criterion=nn.MSELoss()
@@ -239,7 +213,7 @@ optimizer=torch.optim.Adam(model.parameters(),lr=0.001)
 # STEP 7 : TRAIN MODEL
 # ==========================================================
 
-print("\nSTEP 7 : Training anomaly detection model\n")
+print("\nSTEP 7 : Training model\n")
 
 epochs=10
 
@@ -255,14 +229,14 @@ for epoch in range(epochs):
 
     optimizer.step()
 
-    print("Epoch",epoch,"Training Loss:",loss.item())
+    print("Epoch",epoch,"Loss:",loss.item())
 
 
 # ==========================================================
-# STEP 8 : COMPUTE ANOMALY SCORE
+# STEP 8 : ANOMALY DETECTION
 # ==========================================================
 
-print("\nSTEP 8 : Computing anomaly score\n")
+print("\nSTEP 8 : Detecting anomalies\n")
 
 model.eval()
 
@@ -275,15 +249,15 @@ threshold=np.mean(errors)+3*np.std(errors)
 
 anomalies=errors>threshold
 
-print("Threshold value:",threshold)
-print("Number of anomalies detected:",anomalies.sum())
+print("Threshold:",threshold)
+print("Total anomalies detected:",anomalies.sum())
 
 
 # ==========================================================
-# STEP 9 : GRAFANA-STYLE DASHBOARD
+# STEP 9 : DASHBOARD
 # ==========================================================
 
-print("\nSTEP 9 : Grafana-style anomaly dashboard\n")
+print("\nSTEP 9 : Grafana-style dashboard\n")
 
 fig,axs=plt.subplots(3,1,figsize=(14,10))
 
@@ -309,14 +283,9 @@ axs[2].legend()
 plt.tight_layout()
 plt.show()
 
-
-print("""
-Dashboard Explanation:
-
-Graph 1 : CPU Usage over time
-Graph 2 : Memory Usage over time
-Graph 3 : Anomaly Score
-
-Red horizontal line = anomaly threshold
-Red points = detected anomalies
-""")
+print("\nDashboard Explanation")
+print("Graph 1 : CPU usage over time")
+print("Graph 2 : Memory usage over time")
+print("Graph 3 : Anomaly score")
+print("Red line = threshold")
+print("Red dots = detected anomalies")
